@@ -1,158 +1,176 @@
-import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import RectBivariateSpline
+import ipywidgets as widgets
+from IPython.display import display, clear_output, HTML
+import base64
+from io import BytesIO
 
-# Configuração da página para ocupar mais espaço na tela
-st.set_page_config(page_title="Calculadora Batimétrica", layout="wide")
-
-# Função auxiliar para formatar números no padrão brasileiro
+# ==========================================
+# FUNÇÕES AUXILIARES
+# ==========================================
 def format_br(num, decimals=2):
     return f"{num:,.{decimals}f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
-# Função para ler as distâncias digitadas
 def parse_distancias(texto):
     t = texto.replace(';', ' ').replace(',', '.')
     return np.array([float(i) for i in t.split()])
 
+def fig_to_base64(fig):
+    """Converte gráfico para imagem embutida"""
+    buf = BytesIO()
+    fig.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+    buf.seek(0)
+    img_str = base64.b64encode(buf.read()).decode('utf-8')
+    plt.close(fig)
+    return f'<img src="data:image/png;base64,{img_str}" style="width:100%; max-width:100%; margin-top: 15px;">'
+
+def get_file_content(upload_widget):
+    """Extrai o conteúdo da imagem upada (compatível com várias versões do Colab)"""
+    if not upload_widget.value:
+        return None
+    try:
+        val = upload_widget.value
+        if isinstance(val, tuple): # ipywidgets 8+
+            content = val[0]['content']
+        elif isinstance(val, dict): # ipywidgets 7
+            key = list(val.keys())[0]
+            content = val[key]['content']
+        else:
+            return None
+        if isinstance(content, memoryview):
+            content = content.tobytes()
+        return content
+    except:
+        return None
+
 # ==========================================
-# INTERFACE DE USUÁRIO (Barra Lateral e Principal)
+# 1. CRIAÇÃO DA INTERFACE DE USUÁRIO (UI)
 # ==========================================
-st.title("Calculadora Batimétrica de Lagoas")
-st.markdown("Preencha as dimensões totais da lagoa, as distâncias de medição e cole a matriz de lodo.")
+style = {'description_width': 'initial'}
+layout_padrao = widgets.Layout(width='95%')
+layout_texto = widgets.Layout(width='95%', height='80px')
 
-# Criando colunas para organizar os inputs
-col1, col2, col3, col4 = st.columns(4)
+# --- BLOCO 1: CABEÇALHO ---
+logo_upload = widgets.FileUpload(accept='image/*', multiple=False, description='📁 Upload Logo', style=style, layout=widgets.Layout(width='300px'))
+cliente_input = widgets.Text(description='Cliente:', placeholder='Nome da empresa cliente', style=style, layout=layout_padrao)
+data_input = widgets.Text(description='Data do Levantamento:', placeholder='Ex: 25/10/2023', style=style, layout=layout_padrao)
+resp_input = widgets.Text(description='Resp. Técnico:', placeholder='Nome e CREA/CRQ', style=style, layout=layout_padrao)
 
-with col1:
-    prof_max = st.number_input('Profundidade Máx. (m):', value=1.50, step=0.1)
-with col2:
-    comprimento_lagoa = st.number_input('Comprimento Total (m):', value=75.0, step=1.0)
-with col3:
-    largura_lagoa = st.number_input('Largura Total (m):', value=30.0, step=1.0)
-with col4:
-    sst = st.number_input('Concentração SST (%):', value=8.0, step=0.1)
+# --- BLOCO 2: DADOS DA ETE ---
+nome_ete_input = widgets.Text(description='Nome da ETE:', style=style, layout=layout_padrao)
+municipio_input = widgets.Text(description='Município/UF:', style=style, layout=layout_padrao)
+coord_input = widgets.Text(description='Coordenadas:', placeholder='Ex: 23°33\'S, 46°38\'W', style=style, layout=layout_padrao)
+link_maps_input = widgets.Text(description='Link Google Maps:', placeholder='Cole o link do Maps aqui', style=style, layout=layout_padrao)
+img_maps_upload = widgets.FileUpload(accept='image/*', multiple=False, description='📁 Upload Mapa', style=style, layout=widgets.Layout(width='300px'))
+desc_ete_input = widgets.Textarea(description='Descrição da ETE:', placeholder='Breve descrição do local...', style=style, layout=layout_texto)
 
-st.markdown("---")
-st.markdown("#### Coordenadas da Malha Medida")
-st.caption("Separe os números por espaço ou vírgula. A quantidade de números deve bater com as linhas/colunas da matriz.")
+# --- BLOCO 2.1: DADOS DA LAGOA ---
+nome_lagoa_input = widgets.Text(description='Nome da Lagoa:', placeholder='Ex: Lagoa Anaeróbia 01', style=style, layout=layout_padrao)
+desc_lagoa_input = widgets.Textarea(description='Descrição da Lagoa:', placeholder='Breve descrição da lagoa...', style=style, layout=layout_texto)
 
-col_x, col_y = st.columns(2)
-with col_x:
-    distancias_x_input = st.text_input('Distâncias X (Comprimento) [m]:', value="10 20 30 40 50 60 70 80")
-with col_y:
-    distancias_y_input = st.text_input('Distâncias Y (Largura) [m]:', value="10 20 30")
+# --- BLOCO 3: TEXTOS DO RELATÓRIO ---
+objetivo_input = widgets.Textarea(description='Objetivo:', placeholder='Descreva o objetivo deste relatório...', style=style, layout=layout_texto)
+metodologia_input = widgets.Textarea(description='Metodologia:', placeholder='Descreva a metodologia utilizada no levantamento...', style=style, layout=layout_texto)
+conclusao_input = widgets.Textarea(description='Conclusões:', placeholder='Descreva as conclusões e recomendações...', style=style, layout=layout_texto)
 
-matriz_input = st.text_area(
-    'Dados do Lodo (Matriz copiada do Excel):',
+# --- BLOCO 4: DADOS BATIMÉTRICOS ---
+profundidade_max_input = widgets.FloatText(value=1.50, description='Profundidade Máx. (m):', style=style)
+comprimento_input = widgets.FloatText(value=75.0, description='Comprimento Total (m):', style=style)
+largura_input = widgets.FloatText(value=30.0, description='Largura Total (m):', style=style)
+sst_input = widgets.FloatText(value=8.0, description='Concentração SST (%):', style=style)
+
+distancias_x_input = widgets.Text(value="10 20 30 40 50 60 70 80", description='Distâncias X (Comp.) [m]:', style=style, layout=layout_padrao)
+distancias_y_input = widgets.Text(value="10 20 30", description='Distâncias Y (Larg.) [m]:', style=style, layout=layout_padrao)
+
+matriz_input = widgets.Textarea(
     value="0.90\t0.50\t0.15\t0.20\t0.40\t0.40\t0.80\t0.85\n0.95\t0.70\t0.25\t0.15\t0.10\t0.10\t0.40\t0.90\n1.00\t1.00\t0.60\t0.25\t0.20\t0.40\t0.70\t0.70",
-    height=150
+    placeholder='Cole aqui os dados do Excel (apenas os números)...',
+    description='Dados do Lodo (Matriz):',
+    layout=widgets.Layout(width='95%', height='150px'),
+    style=style
 )
 
+botao_gerar = widgets.Button(description="Gerar Relatório Completo", button_style='success', layout=widgets.Layout(width='300px', height='50px'))
+output_area = widgets.Output()
+
+interface = widgets.VBox([
+    widgets.HTML("<h2 style='color: #2c3e50;'>Calculadora Batimétrica de Lagoas</h2>"),
+    widgets.HTML("<h3 style='color: #2c3e50;'>📋 Cabeçalho do Relatório</h3>"),
+    logo_upload, cliente_input, data_input, resp_input,
+    widgets.HTML("<h3 style='color: #2c3e50;'>🏢 Dados da ETE</h3>"),
+    nome_ete_input, municipio_input, coord_input, link_maps_input, img_maps_upload, desc_ete_input,
+    widgets.HTML("<h3 style='color: #2c3e50;'>🌊 Dados da Lagoa</h3>"),
+    nome_lagoa_input, desc_lagoa_input,
+    widgets.HTML("<h3 style='color: #2c3e50;'>📝 Textos do Relatório</h3>"),
+    objetivo_input, metodologia_input, conclusao_input,
+    widgets.HTML("<h3 style='color: #2c3e50;'>📏 Parâmetros da Lagoa</h3>"),
+    profundidade_max_input, comprimento_input, largura_input, sst_input,
+    widgets.HTML("<hr style='margin: 10px 0;'><b>Coordenadas da Malha Medida:</b><br><small><i>Separe os números por espaço ou vírgula.</i></small>"),
+    distancias_x_input, distancias_y_input,
+    widgets.HTML("<hr style='margin: 10px 0;'><b>Matriz de Altura do Lodo (m):</b>"),
+    matriz_input,
+    widgets.HTML("<br>"),
+    botao_gerar
+])
+
 # ==========================================
-# PROCESSAMENTO DOS DADOS
+# 2. FUNÇÃO DE PROCESSAMENTO E GERAÇÃO
 # ==========================================
-if st.button("Gerar Relatório e Gráficos", type="primary"):
-    try:
-        # Processa a matriz Z
-        texto_bruto = matriz_input.strip().replace(',', '.')
-        linhas = texto_bruto.split('\n')
-        dados_z = []
-        for linha in linhas:
-            if linha.strip():
-                valores = [float(v) for v in linha.split()]
-                dados_z.append(valores)
+def processar_dados(b):
+    with output_area:
+        clear_output(wait=True)
+        try:
+            # --- LEITURA DOS DADOS ---
+            prof_max = profundidade_max_input.value
+            comprimento_lagoa = comprimento_input.value
+            largura_lagoa = largura_input.value
 
-        z = np.array(dados_z)
-        linhas_qtd, colunas_qtd = z.shape
+            x = parse_distancias(distancias_x_input.value)
+            y = parse_distancias(distancias_y_input.value)
 
-        # Processa as distâncias X e Y
-        x = parse_distancias(distancias_x_input)
-        y = parse_distancias(distancias_y_input)
+            linhas = matriz_input.value.strip().split('\n')
+            z = np.array([[float(val.replace(',', '.')) for val in linha.split()] for linha in linhas])
 
-        # Validações de segurança
-        erros = []
-        if len(x) != colunas_qtd:
-            erros.append(f"Erro no Eixo X: Você digitou {len(x)} distâncias, mas a matriz tem {colunas_qtd} colunas.")
-        if len(y) != linhas_qtd:
-            erros.append(f"Erro no Eixo Y: Você digitou {len(y)} distâncias, mas a matriz tem {linhas_qtd} linhas.")
+            linhas_qtd, colunas_qtd = z.shape
+            if len(y) != linhas_qtd or len(x) != colunas_qtd:
+                print(f"ERRO: A matriz tem {linhas_qtd} linhas e {colunas_qtd} colunas.")
+                print(f"Mas você digitou {len(y)} distâncias em Y e {len(x)} distâncias em X.")
+                return
 
-        if erros:
-            for erro in erros:
-                st.error(erro)
-        else:
-            # --- CÁLCULOS DE ÁREA E VOLUME ---
-            area_total_lagoa = comprimento_lagoa * largura_lagoa
+            # --- PROCESSAMENTO DE IMAGENS (LOGO E MAPA) ---
+            logo_content = get_file_content(logo_upload)
+            if logo_content:
+                logo_b64 = base64.b64encode(logo_content).decode('utf-8')
+                logo_tag = f'<img src="data:image/png;base64,{logo_b64}" style="max-height: 80px; max-width: 200px;">'
+            else:
+                logo_tag = '<div style="height: 80px; width: 200px; background-color: #f0f0f0; text-align: center; line-height: 80px; color: #999; border: 1px dashed #ccc;">Sem Logo</div>'
+
+            mapa_content = get_file_content(img_maps_upload)
+            if mapa_content:
+                mapa_b64 = base64.b64encode(mapa_content).decode('utf-8')
+                img_mapa_tag = f'<div style="text-align: center; margin-top: 10px;"><img src="data:image/png;base64,{mapa_b64}" style="max-width: 100%; max-height: 300px; border: 1px solid #bdc3c7; border-radius: 4px;"></div>'
+            else:
+                img_mapa_tag = ''
+
+            link_tag = f'<a href="{link_maps_input.value}" target="_blank" style="color: #2980b9; text-decoration: none;">📍 Ver no Google Maps</a>' if link_maps_input.value else '-'
+
+            # --- CÁLCULOS VOLUMÉTRICOS ---
+            area_lagoa = comprimento_lagoa * largura_lagoa
+            volume_total_lagoa = area_lagoa * prof_max
+
             espessura_media_lodo = np.mean(z)
+            volume_lodo_total_estimado = area_lagoa * espessura_media_lodo
 
-            volume_nominal = area_total_lagoa * prof_max
-            volume_lodo_total_estimado = area_total_lagoa * espessura_media_lodo
-            volume_livre_restante = volume_nominal - volume_lodo_total_estimado
-            profundidade_media_livre = prof_max - espessura_media_lodo
+            prof_livre_media = prof_max - espessura_media_lodo
+            volume_livre_restante = area_lagoa * prof_livre_media
 
-            densidade_lodo = 1000
-            massa_seca_kg = volume_lodo_total_estimado * densidade_lodo * (sst / 100)
+            densidade_lodo = 1020
+            massa_lodo_total_kg = volume_lodo_total_estimado * densidade_lodo
+            fracao_solidos = sst_input.value / 100.0
+            massa_seca_kg = massa_lodo_total_kg * fracao_solidos
 
-            # --- CONSTRUÇÃO DA TABELA HTML DE VOLUMES ---
-            tabela_volumes_html = f"""
-            <h4 style='color: #2c3e50;'>1. Resumo Volumétrico</h4>
-            <table style='width: 100%; border-collapse: collapse; font-size: 14px; text-align: left; background-color: white; border: 1px solid #bdc3c7;'>
-                <tr style='background-color: #ecf0f1; border-bottom: 2px solid #bdc3c7;'>
-                    <th style='padding: 12px; border: 1px solid #bdc3c7; color: #34495e;'>Parâmetro</th>
-                    <th style='padding: 12px; border: 1px solid #bdc3c7; color: #34495e;'>Área de Referência</th>
-                    <th style='padding: 12px; border: 1px solid #bdc3c7; color: #34495e;'>Profundidade / Espessura</th>
-                    <th style='padding: 12px; border: 1px solid #bdc3c7; color: #34495e;'>Volume Calculado</th>
-                </tr>
-                <tr>
-                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold; color: #555;">Capacidade Total da Lagoa</td>
-                    <td style="padding: 12px; border: 1px solid #dee2e6;">{format_br(area_total_lagoa, 0)} m² ({format_br(comprimento_lagoa, 0)}x{format_br(largura_lagoa, 0)}m)</td>
-                    <td style="padding: 12px; border: 1px solid #dee2e6;">{format_br(prof_max)} m (máxima)</td>
-                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold;">{format_br(volume_nominal)} m³</td>
-                </tr>
-                <tr>
-                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold; color: #555;">Lodo Total Estimado*</td>
-                    <td style="padding: 12px; border: 1px solid #dee2e6;">{format_br(area_total_lagoa, 0)} m² ({format_br(comprimento_lagoa, 0)}x{format_br(largura_lagoa, 0)}m)</td>
-                    <td style="padding: 12px; border: 1px solid #dee2e6;">{format_br(espessura_media_lodo)} m (média projetada)</td>
-                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold;">{format_br(volume_lodo_total_estimado)} m³</td>
-                </tr>
-                <tr>
-                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold; color: #555;">Volume Livre Restante</td>
-                    <td style="padding: 12px; border: 1px solid #dee2e6;">{format_br(area_total_lagoa, 0)} m² ({format_br(comprimento_lagoa, 0)}x{format_br(largura_lagoa, 0)}m)</td>
-                    <td style="padding: 12px; border: 1px solid #dee2e6;">{format_br(profundidade_media_livre)} m (média livre)</td>
-                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold;">{format_br(volume_livre_restante)} m³</td>
-                </tr>
-                <tr style="background-color: #fff3e0;">
-                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold; color: #d35400;">Total de Lodo (Massa Seca)</td>
-                    <td style="padding: 12px; border: 1px solid #dee2e6; color: #7f8c8d; font-size: 12px;"><i>Baseado no Lodo Total Estimado</i></td>
-                    <td style="padding: 12px; border: 1px solid #dee2e6;">SST: {format_br(sst)}%</td>
-                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold; color: #d35400;">{format_br(massa_seca_kg)} kg</td>
-                </tr>
-            </table>
-            """
-
-            # --- CONSTRUÇÃO DA TABELA HTML DE DADOS (Matriz) ---
-            tabela_html = "<h4 style='margin-top: 20px; margin-bottom: 10px; color: #2c3e50;'>2. Matriz de Dados Medidos (Alturas em metros)</h4>"
-            tabela_html += "<div style='overflow-x: auto;'><table style='width: 100%; border-collapse: collapse; font-size: 13px; text-align: center; background-color: white; border: 1px solid #bdc3c7;'>"
-            tabela_html += "<tr style='background-color: #ecf0f1; border-bottom: 2px solid #bdc3c7;'>"
-            tabela_html += "<th style='padding: 8px; border: 1px solid #bdc3c7; color: #34495e;'>Largura \ Comp.</th>"
-            for val_x in x:
-                tabela_html += f"<th style='padding: 8px; border: 1px solid #bdc3c7; color: #34495e;'>{val_x:g}m</th>"
-            tabela_html += "</tr>"
-
-            for i in range(linhas_qtd):
-                tabela_html += "<tr>"
-                tabela_html += f"<th style='background-color: #ecf0f1; padding: 8px; border: 1px solid #bdc3c7; color: #34495e;'>{y[i]:g}m</th>"
-                for j in range(colunas_qtd):
-                    tabela_html += f"<td style='padding: 8px; border: 1px solid #bdc3c7;'>{format_br(z[i, j])}</td>"
-                tabela_html += "</tr>"
-            tabela_html += "</table></div>"
-
-            # Renderiza as tabelas no Streamlit
-            st.markdown(tabela_volumes_html, unsafe_allow_html=True)
-            st.markdown(tabela_html, unsafe_allow_html=True)
-            st.markdown("---")
-
-            # --- SUAVIZAÇÃO E TRAVA ANTI-ELÁSTICO ---
+            # --- SUAVIZAÇÃO E GRÁFICOS ---
             grau_linhas = min(3, linhas_qtd - 1)
             grau_colunas = min(3, colunas_qtd - 1)
             interp_spline = RectBivariateSpline(y, x, z, kx=grau_linhas, ky=grau_colunas)
@@ -161,51 +179,45 @@ if st.button("Gerar Relatório e Gráficos", type="primary"):
             y_smooth = np.linspace(0, largura_lagoa, 100)
             X_smooth, Y_smooth = np.meshgrid(x_smooth, y_smooth)
             Z_smooth = interp_spline(y_smooth, x_smooth)
-
-            z_min_real = np.min(z)
-            z_max_real = np.max(z)
-            Z_smooth = np.clip(Z_smooth, z_min_real, z_max_real)
-
-            # --- GRÁFICOS ---
-            st.markdown("<h4 style='color: #2c3e50;'>3. Visualizações Gráficas</h4>", unsafe_allow_html=True)
+            Z_smooth = np.clip(Z_smooth, np.min(z), np.max(z))
 
             # Gráfico 1
-            fig1, ax1 = plt.subplots(figsize=(12, 5))
+            fig1, ax1 = plt.subplots(figsize=(8, 4))
             contorno_cor = ax1.contourf(X_smooth, Y_smooth, Z_smooth, levels=15, cmap='viridis')
             contorno_linhas = ax1.contour(X_smooth, Y_smooth, Z_smooth, levels=15, colors='black', linewidths=0.5, alpha=0.7)
             ax1.clabel(contorno_linhas, inline=True, fontsize=9, fmt='%1.2f m')
             fig1.colorbar(contorno_cor, label='Altura do Lodo (m)')
-            ax1.set_title('Mapa Batimétrico (Planta) - Área Total da Lagoa', fontsize=14)
+            ax1.set_title('Mapa Batimétrico (Planta) - Área Total da Lagoa', fontsize=12)
             ax1.set_xlabel('Comprimento (m)')
             ax1.set_ylabel('Largura (m)')
-            st.pyplot(fig1)
+            img_grafico1 = fig_to_base64(fig1)
 
             # Gráfico 2
-            fig2, (ax2a, ax2b) = plt.subplots(2, 1, figsize=(12, 10))
+            fig2, (ax2a, ax2b) = plt.subplots(2, 1, figsize=(8, 7))
             z_longitudinal = np.mean(Z_smooth, axis=0)
             ax2a.fill_between(x_smooth, 0, z_longitudinal, color='#8B4513', alpha=0.8, label='Camada de Lodo')
             ax2a.fill_between(x_smooth, z_longitudinal, prof_max, color='#00CED1', alpha=0.3, label='Camada de Água (Livre)')
-            ax2a.set_title('Perfil Longitudinal Médio (Corte no Comprimento)', fontsize=12)
+            ax2a.set_title('Perfil Longitudinal Médio (Corte no Comprimento)', fontsize=10)
             ax2a.set_xlabel('Comprimento (m)')
             ax2a.set_ylabel('Altura (m)')
             ax2a.set_ylim(0, prof_max + 0.1)
-            ax2a.legend(loc='upper left')
+            ax2a.legend(loc='upper left', fontsize=8)
             ax2a.grid(True, linestyle='--', alpha=0.5)
 
             z_transversal = np.mean(Z_smooth, axis=1)
             ax2b.fill_between(y_smooth, 0, z_transversal, color='#8B4513', alpha=0.8, label='Camada de Lodo')
             ax2b.fill_between(y_smooth, z_transversal, prof_max, color='#00CED1', alpha=0.3, label='Camada de Água (Livre)')
-            ax2b.set_title('Perfil Transversal Médio (Corte na Largura)', fontsize=12)
+            ax2b.set_title('Perfil Transversal Médio (Corte na Largura)', fontsize=10)
             ax2b.set_xlabel('Largura (m)')
             ax2b.set_ylabel('Altura (m)')
             ax2b.set_ylim(0, prof_max + 0.1)
-            ax2b.legend(loc='upper left')
+            ax2b.legend(loc='upper left', fontsize=8)
             ax2b.grid(True, linestyle='--', alpha=0.5)
-            plt.tight_layout(pad=3.0)
-            st.pyplot(fig2)
+            plt.tight_layout(pad=2.0)
+            img_grafico2 = fig_to_base64(fig2)
 
             # Gráfico 3
-            fig3 = plt.figure(figsize=(14, 7))
+            fig3 = plt.figure(figsize=(8, 6))
             ax3 = fig3.add_subplot(111, projection='3d')
             cor_massa = 'lightgray'
             ax3.plot_surface(np.array([X_smooth[0,:], X_smooth[0,:]]), np.array([Y_smooth[0,:], Y_smooth[0,:]]), np.array([np.zeros_like(Z_smooth[0,:]), Z_smooth[0,:]]), color=cor_massa, alpha=1.0)
@@ -213,21 +225,198 @@ if st.button("Gerar Relatório e Gráficos", type="primary"):
             ax3.plot_surface(np.array([X_smooth[:,0], X_smooth[:,0]]), np.array([Y_smooth[:,0], Y_smooth[:,0]]), np.array([np.zeros_like(Z_smooth[:,0]), Z_smooth[:,0]]), color=cor_massa, alpha=1.0)
             ax3.plot_surface(np.array([X_smooth[:,-1], X_smooth[:,-1]]), np.array([Y_smooth[:,-1], Y_smooth[:,-1]]), np.array([np.zeros_like(Z_smooth[:,-1]), Z_smooth[:,-1]]), color=cor_massa, alpha=1.0)
             ax3.plot_surface(X_smooth, Y_smooth, np.zeros_like(Z_smooth), color=cor_massa, alpha=1.0)
-
             surf = ax3.plot_surface(X_smooth, Y_smooth, Z_smooth, cmap='viridis', edgecolor='none', alpha=1.0)
             Z_max = np.full_like(X_smooth, prof_max)
             ax3.plot_surface(X_smooth, Y_smooth, Z_max, color='cyan', alpha=0.15)
-
-            ax3.set_title('Mapa 3D: Perfil de Acúmulo de Lodo na Lagoa', fontsize=14, pad=20)
+            ax3.set_title('Mapa 3D: Perfil de Acúmulo de Lodo na Lagoa', fontsize=12, pad=10)
             ax3.set_xlabel('Comprimento (m)')
             ax3.set_ylabel('Largura (m)')
             ax3.set_zlabel('Altura do Lodo (m)')
             ax3.set_zlim(0, prof_max)
-
-            proporcao_x = comprimento_lagoa / largura_lagoa
-            ax3.set_box_aspect((proporcao_x, 1, 0.8))
+            ax3.set_box_aspect((comprimento_lagoa / largura_lagoa, 1, 0.8))
             fig3.colorbar(surf, shrink=0.5, aspect=5, label='Altura do Lodo (m)', pad=0.1)
-            st.pyplot(fig3)
+            img_grafico3 = fig_to_base64(fig3)
 
-    except Exception as e:
-        st.error(f"Erro ao processar os dados: Verifique se os dados inseridos estão corretos. Detalhe do erro: {e}")
+            # --- TABELAS HTML ---
+            tabela_volumes = f"""
+            <h3 style="color: #2980b9; margin-top: 30px;">5. Resultados Volumétricos</h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px; text-align: left; margin-bottom: 20px;">
+                <tr style="background-color: #34495e; color: white;">
+                    <th style="padding: 10px; border: 1px solid #2c3e50;">Parâmetro</th>
+                    <th style="padding: 10px; border: 1px solid #2c3e50;">Área Base</th>
+                    <th style="padding: 10px; border: 1px solid #2c3e50;">Profundidade / Espessura</th>
+                    <th style="padding: 10px; border: 1px solid #2c3e50;">Volume Calculado</th>
+                </tr>
+                <tr style="background-color: #f9f9f9;">
+                    <td style="padding: 10px; border: 1px solid #bdc3c7; font-weight: bold;">Capacidade Total da Lagoa</td>
+                    <td style="padding: 10px; border: 1px solid #bdc3c7;">{format_br(area_lagoa)} m² ({format_br(comprimento_lagoa,0)}x{format_br(largura_lagoa,0)}m)</td>
+                    <td style="padding: 10px; border: 1px solid #bdc3c7;">{format_br(prof_max)} m (máxima)</td>
+                    <td style="padding: 10px; border: 1px solid #bdc3c7; font-weight: bold;">{format_br(volume_total_lagoa)} m³</td>
+                </tr>
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #bdc3c7; font-weight: bold;">Lodo Total Estimado</td>
+                    <td style="padding: 10px; border: 1px solid #bdc3c7;">{format_br(area_lagoa)} m² ({format_br(comprimento_lagoa,0)}x{format_br(largura_lagoa,0)}m)</td>
+                    <td style="padding: 10px; border: 1px solid #bdc3c7;">{format_br(espessura_media_lodo)} m (média projetada)</td>
+                    <td style="padding: 10px; border: 1px solid #bdc3c7; font-weight: bold;">{format_br(volume_lodo_total_estimado)} m³</td>
+                </tr>
+                <tr style="background-color: #e8f6f3;">
+                    <td style="padding: 10px; border: 1px solid #bdc3c7; font-weight: bold; color: #16a085;">Volume Livre Restante</td>
+                    <td style="padding: 10px; border: 1px solid #bdc3c7; color: #16a085;">{format_br(area_lagoa)} m² ({format_br(comprimento_lagoa,0)}x{format_br(largura_lagoa,0)}m)</td>
+                    <td style="padding: 10px; border: 1px solid #bdc3c7; color: #16a085;">{format_br(prof_livre_media)} m (média livre)</td>
+                    <td style="padding: 10px; border: 1px solid #bdc3c7; font-weight: bold; color: #16a085;">{format_br(volume_livre_restante)} m³</td>
+                </tr>
+                <tr style="background-color: #fdf2e9;">
+                    <td style="padding: 10px; border: 1px solid #bdc3c7; font-weight: bold; color: #d35400;">Total de Lodo (Massa Seca)</td>
+                    <td style="padding: 10px; border: 1px solid #bdc3c7; font-style: italic; color: #7f8c8d;">Baseado no Lodo Total Estimado</td>
+                    <td style="padding: 10px; border: 1px solid #bdc3c7; color: #d35400;">SST: {format_br(sst_input.value)}%</td>
+                    <td style="padding: 10px; border: 1px solid #bdc3c7; font-weight: bold; color: #d35400;">{format_br(massa_seca_kg)} kg</td>
+                </tr>
+            </table>
+            """
+
+            tabela_matriz = """
+            <div class="avoid-break">
+            <h3 style="color: #2980b9; margin-top: 30px;">6. Matriz de Dados Medidos (Alturas em metros)</h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; margin-bottom: 20px;">
+                <tr style="background-color: #ecf0f1;">
+                    <th style="padding: 8px; border: 1px solid #bdc3c7; color: #34495e;">Largura \ Comp.</th>
+            """
+            for val_x in x:
+                tabela_matriz += f"<th style='padding: 8px; border: 1px solid #bdc3c7; color: #34495e;'>{val_x:g}m</th>"
+            tabela_matriz += "</tr>"
+
+            for i in range(linhas_qtd):
+                tabela_matriz += "<tr>"
+                tabela_matriz += f"<th style='background-color: #ecf0f1; padding: 8px; border: 1px solid #bdc3c7; color: #34495e;'>{y[i]:g}m</th>"
+                for j in range(colunas_qtd):
+                    tabela_matriz += f"<td style='padding: 8px; border: 1px solid #bdc3c7;'>{format_br(z[i, j])}</td>"
+                tabela_matriz += "</tr>"
+            tabela_matriz += "</table></div>"
+
+            # --- CONSTRUÇÃO DO HTML FINAL ---
+            relatorio_html = f"""
+            <div id="relatorio-container" style="font-family: Arial, sans-serif; max-width: 21cm; margin: 0 auto; background-color: white; padding: 20px; box-sizing: border-box;">
+
+                <!-- CABEÇALHO -->
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                    <tr>
+                        <td style="width: 30%; vertical-align: middle;">{logo_tag}</td>
+                        <td style="width: 70%; text-align: right; line-height: 1.5; font-size: 14px; color: #34495e;">
+                            <b>Cliente:</b> {cliente_input.value or '-'}<br>
+                            <b>Data:</b> {data_input.value or '-'}<br>
+                            <b>Responsável Técnico:</b> {resp_input.value or '-'}
+                        </td>
+                    </tr>
+                </table>
+
+                <h2 style="text-align: center; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px;">RELATÓRIO TÉCNICO BATIMÉTRICO</h2>
+
+                <!-- IDENTIFICAÇÃO DA ETE -->
+                <h3 style="color: #2980b9; margin-top: 30px;">1. Identificação da ETE</h3>
+                <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 10px;">
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold; width: 25%;">Nome da ETE:</td>
+                        <td style="padding: 8px; border: 1px solid #bdc3c7;">{nome_ete_input.value or '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold;">Município/UF:</td>
+                        <td style="padding: 8px; border: 1px solid #bdc3c7;">{municipio_input.value or '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold;">Coordenadas:</td>
+                        <td style="padding: 8px; border: 1px solid #bdc3c7;">{coord_input.value or '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold;">Localização:</td>
+                        <td style="padding: 8px; border: 1px solid #bdc3c7;">{link_tag}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold;">Descrição:</td>
+                        <td style="padding: 8px; border: 1px solid #bdc3c7;">{desc_ete_input.value or '-'}</td>
+                    </tr>
+                </table>
+                {img_mapa_tag}
+
+                <!-- IDENTIFICAÇÃO DA LAGOA -->
+                <h3 style="color: #2980b9; margin-top: 30px;">2. Identificação da Lagoa</h3>
+                <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px;">
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold; width: 25%;">Nome da Lagoa:</td>
+                        <td style="padding: 8px; border: 1px solid #bdc3c7;">{nome_lagoa_input.value or '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold;">Descrição:</td>
+                        <td style="padding: 8px; border: 1px solid #bdc3c7;">{desc_lagoa_input.value or '-'}</td>
+                    </tr>
+                </table>
+
+                <!-- OBJETIVO E METODOLOGIA -->
+                <h3 style="color: #2980b9; margin-top: 30px;">3. Objetivo</h3>
+                <p style="text-align: justify; font-size: 14px; color: #444; line-height: 1.6;">{objetivo_input.value or 'Não informado.'}</p>
+
+                <h3 style="color: #2980b9; margin-top: 30px;">4. Metodologia</h3>
+                <p style="text-align: justify; font-size: 14px; color: #444; line-height: 1.6;">{metodologia_input.value or 'Não informada.'}</p>
+
+                <!-- TABELAS DE DADOS -->
+                {tabela_volumes}
+                {tabela_matriz}
+
+                <!-- CONCLUSÕES -->
+                <div class="avoid-break">
+                    <h3 style="color: #2980b9; margin-top: 30px;">7. Conclusões e Recomendações</h3>
+                    <p style="text-align: justify; font-size: 14px; color: #444; line-height: 1.6;">{conclusao_input.value or 'Não informada.'}</p>
+                </div>
+
+                <!-- ANEXOS GRÁFICOS -->
+                <div class="avoid-break">
+                    <h3 style="color: #2980b9; margin-top: 40px;">8. Anexos Gráficos</h3>
+                    {img_grafico1}
+                </div>
+                <div class="avoid-break">{img_grafico2}</div>
+                <div class="avoid-break">{img_grafico3}</div>
+
+                <!-- ASSINATURA -->
+                <div class="avoid-break" style="margin-top: 60px; text-align: center;">
+                    <div style="width: 350px; border-top: 1px solid #000; margin: 0 auto; padding-top: 10px;">
+                        <b style="color: #2c3e50; font-size: 16px;">{resp_input.value or 'Responsável Técnico'}</b><br>
+                        <span style="font-size: 13px; color: #555;">Assinatura do Responsável</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SCRIPT DE IMPRESSÃO ISOLADA -->
+            <script>
+            function imprimirRelatorio() {{
+                var conteudo = document.getElementById('relatorio-container').innerHTML;
+                var janela = window.open('', '', 'width=900,height=800');
+                janela.document.write('<html><head><title>Relatório Batimétrico</title>');
+                janela.document.write('<style>');
+                janela.document.write('body {{ font-family: Arial, sans-serif; margin: 0; padding: 20px; }}');
+                janela.document.write('.avoid-break {{ page-break-inside: avoid; }}');
+                janela.document.write('</style></head><body>');
+                janela.document.write(conteudo);
+                janela.document.write('</body></html>');
+                janela.document.close();
+                janela.focus();
+                setTimeout(function() {{ janela.print(); }}, 800);
+            }}
+            </script>
+
+            <div style="text-align: center; margin-top: 30px; padding: 20px; border-top: 2px dashed #ccc;">
+                <button onclick="imprimirRelatorio()" style="background-color: #27ae60; color: white; padding: 15px 30px; border: none; border-radius: 5px; font-size: 18px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    🖨️ Imprimir / Salvar PDF Limpo
+                </button>
+                <p style="font-size: 13px; color: #7f8c8d; margin-top: 10px;">Uma nova aba será aberta apenas com o relatório pronto para salvar.</p>
+            </div>
+            """
+
+            display(HTML(relatorio_html))
+
+        except Exception as e:
+            print(f"Erro ao processar os dados: Verifique se os dados inseridos estão corretos. Detalhe do erro: {e}")
+
+# Conectando o botão à função
+botao_gerar.on_click(processar_dados)
+
+# Exibindo a interface
+display(interface, output_area)
