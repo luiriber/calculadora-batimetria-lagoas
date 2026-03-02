@@ -111,6 +111,9 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
             volume_lodo_total_estimado = area_lagoa * espessura_media_lodo
             volume_livre_restante = volume_total_lagoa - volume_lodo_total_estimado
 
+            # Novo cálculo: Percentual de lodo em relação ao volume total da lagoa
+            percentual_lodo = (volume_lodo_total_estimado / volume_total_lagoa) * 100 if volume_total_lagoa > 0 else 0
+
             densidade_lodo = 1000
             massa_seca_kg = volume_lodo_total_estimado * densidade_lodo * (sst_input / 100)
 
@@ -197,6 +200,10 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
                 <tr style="background-color: #f9f9f9;">
                     <td style="padding: 12px; border: 1px solid #dee2e6;">Lodo Total Estimado</td>
                     <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold; color: #d35400;">{format_br(volume_lodo_total_estimado)} m³</td>
+                </tr>
+                <tr>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">Percentual de Lodo (em relação ao volume total)</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold; color: #d35400;">{format_br(percentual_lodo)} %</td>
                 </tr>
                 <tr>
                     <td style="padding: 12px; border: 1px solid #dee2e6;">Volume Livre Restante (Água)</td>
