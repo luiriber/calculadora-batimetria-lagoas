@@ -4,9 +4,25 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import RectBivariateSpline
 import base64
 from io import BytesIO
+import json # NOVO: Importação para lidar com os arquivos salvos
 
 # Configuração da página do Streamlit
 st.set_page_config(page_title="Calculadora Batimétrica", layout="wide")
+
+# ==========================================
+# NOVO: SISTEMA DE IMPORTAR/CARREGAR DADOS
+# ==========================================
+st.sidebar.header("📂 Gerenciar Projeto")
+
+arquivo_importado = st.sidebar.file_uploader("📥 Carregar Projeto Salvo (.json)", type=["json"])
+if arquivo_importado is not None:
+    try:
+        dados_carregados = json.load(arquivo_importado)
+        for key, value in dados_carregados.items():
+            st.session_state[key] = value
+        st.sidebar.success("Dados carregados com sucesso!")
+    except Exception as e:
+        st.sidebar.error(f"Erro ao ler o arquivo: {e}")
 
 # ==========================================
 # FUNÇÕES AUXILIARES
@@ -36,40 +52,61 @@ st.markdown("Preencha os dados abaixo para gerar o relatório técnico completo.
 with st.expander("📋 Cabeçalho do Relatório", expanded=True):
     logo_upload = st.file_uploader("Upload Logo (Opcional)", type=['png', 'jpg', 'jpeg'])
     col1, col2, col3 = st.columns(3)
-    cliente_input = col1.text_input("Cliente:", placeholder="Nome da empresa cliente")
-    data_input = col2.text_input("Data do Levantamento:", placeholder="Ex: 25/10/2023")
-    resp_input = col3.text_input("Resp. Técnico:", placeholder="Nome e CREA/CRQ")
+    cliente_input = col1.text_input("Cliente:", placeholder="Nome da empresa cliente", key="cliente")
+    data_input = col2.text_input("Data do Levantamento:", placeholder="Ex: 25/10/2023", key="data_lev")
+    resp_input = col3.text_input("Resp. Técnico:", placeholder="Nome e CREA/CRQ", key="resp_tec")
 
 with st.expander("🏢 Dados da ETE", expanded=True):
     col1, col2 = st.columns(2)
-    nome_ete_input = col1.text_input("Nome da ETE:")
-    municipio_input = col2.text_input("Município/UF:")
-    coord_input = col1.text_input("Coordenadas:", placeholder="Ex: 23°33'S, 46°38'W")
-    link_maps_input = col2.text_input("Link Google Maps:")
+    nome_ete_input = col1.text_input("Nome da ETE:", key="nome_ete")
+    municipio_input = col2.text_input("Município/UF:", key="municipio")
+    coord_input = col1.text_input("Coordenadas:", placeholder="Ex: 23°33'S, 46°38'W", key="coord")
+    link_maps_input = col2.text_input("Link Google Maps:", key="link_maps")
     img_maps_upload = st.file_uploader("Upload Imagem do Mapa (Opcional)", type=['png', 'jpg', 'jpeg'])
-    desc_ete_input = st.text_area("Descrição da ETE:", placeholder="Breve descrição do local...")
+    desc_ete_input = st.text_area("Descrição da ETE:", placeholder="Breve descrição do local...", key="desc_ete")
 
 with st.expander("💧 Dados da Lagoa", expanded=True):
-    nome_lagoa_input = st.text_input("Nome da Lagoa:", placeholder="Ex: Lagoa Anaeróbia 01")
-    desc_lagoa_input = st.text_area("Descrição da Lagoa:", placeholder="Breve descrição da lagoa...")
+    nome_lagoa_input = st.text_input("Nome da Lagoa:", placeholder="Ex: Lagoa Anaeróbia 01", key="nome_lagoa")
+    desc_lagoa_input = st.text_area("Descrição da Lagoa:", placeholder="Breve descrição da lagoa...", key="desc_lagoa")
 
 with st.expander("📝 Textos do Relatório", expanded=True):
-    objetivo_input = st.text_area("Objetivo:", placeholder="Descreva o objetivo deste relatório...")
-    metodologia_input = st.text_area("Metodologia:", placeholder="Descreva a metodologia utilizada...")
-    conclusao_input = st.text_area("Conclusões e Recomendações:", placeholder="Descreva as conclusões...")
+    objetivo_input = st.text_area("Objetivo:", placeholder="Descreva o objetivo deste relatório...", key="objetivo")
+    metodologia_input = st.text_area("Metodologia:", placeholder="Descreva a metodologia utilizada...", key="metodologia")
+    conclusao_input = st.text_area("Conclusões e Recomendações:", placeholder="Descreva as conclusões...", key="conclusao")
 
 with st.expander("📊 Dados Batimétricos (Medições)", expanded=True):
     col1, col2, col3, col4 = st.columns(4)
-    profundidade_max_input = col1.number_input("Profundidade Máx. (m):", value=1.50, step=0.1)
-    comprimento_input = col2.number_input("Comprimento Total (m):", value=75.0, step=1.0)
-    largura_input = col3.number_input("Largura Total (m):", value=30.0, step=1.0)
-    sst_input = col4.number_input("Concentração SST (%):", value=8.0, step=0.1)
+    profundidade_max_input = col1.number_input("Profundidade Máx. (m):", value=1.50, step=0.1, key="prof_max")
+    comprimento_input = col2.number_input("Comprimento Total (m):", value=75.0, step=1.0, key="comprimento")
+    largura_input = col3.number_input("Largura Total (m):", value=30.0, step=1.0, key="largura")
+    sst_input = col4.number_input("Concentração SST (%):", value=8.0, step=0.1, key="sst")
 
-    distancias_x_input = st.text_input("Distâncias X (Comprimento) [m]:", value="10 20 30 40 50 60 70 80")
-    distancias_y_input = st.text_input("Distâncias Y (Largura) [m]:", value="10 20 30")
+    distancias_x_input = st.text_input("Distâncias X (Comprimento) [m]:", value="10 20 30 40 50 60 70 80", key="dist_x")
+    distancias_y_input = st.text_input("Distâncias Y (Largura) [m]:", value="10 20 30", key="dist_y")
 
-    matriz_padrao = "0.90\t0.50\t0.15\t0.20\t0.40\t0.40\t0.80\t0.85\n0.95\t0.70\t0.25\t0.15\t0.10\t0.10\t0.40\t0.90\n1.00\t1.00\t0.60\t0.25\t0.20\t0.40\t0.70\t0.70"
-    matriz_input = st.text_area("Dados do Lodo (Matriz copiada do Excel):", value=matriz_padrao, height=150)
+    matriz_padrao = "0.90\\t0.50\\t0.15\\t0.20\\t0.40\\t0.40\\t0.80\\t0.85\\n0.95\\t0.70\\t0.25\\t0.15\\t0.10\\t0.10\\t0.40\\t0.90\\n1.00\\t1.00\\t0.60\\t0.25\\t0.20\\t0.40\\t0.70\\t0.70"
+    matriz_input = st.text_area("Dados do Lodo (Matriz copiada do Excel):", value=matriz_padrao, height=150, key="matriz")
+
+# ==========================================
+# NOVO: SISTEMA DE EXPORTAR/SALVAR DADOS
+# ==========================================
+chaves_para_salvar = [
+    "cliente", "data_lev", "resp_tec", "nome_ete", "municipio", "coord", "link_maps", "desc_ete",
+    "nome_lagoa", "desc_lagoa", "objetivo", "metodologia", "conclusao",
+    "prof_max", "comprimento", "largura", "sst", "dist_x", "dist_y", "matriz"
+]
+# Captura o estado atual das variáveis com base nas keys
+dados_atuais = {k: st.session_state[k] for k in chaves_para_salvar if k in st.session_state}
+json_dados = json.dumps(dados_atuais, indent=4)
+
+st.sidebar.markdown("---")
+st.sidebar.download_button(
+    label="💾 Salvar Dados Atuais (.json)",
+    data=json_dados,
+    file_name="dados_batimetria.json",
+    mime="application/json",
+    use_container_width=True
+)
 
 # ==========================================
 # PROCESSAMENTO E GERAÇÃO DO RELATÓRIO
@@ -96,7 +133,7 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
             x = parse_distancias(distancias_x_input)
             y = parse_distancias(distancias_y_input)
 
-            linhas = matriz_input.strip().split('\n')
+            linhas = matriz_input.strip().split('\\n')
             z = np.array([[float(val.replace(',', '.')) for val in linha.split()] for linha in linhas])
 
             linhas_qtd, colunas_qtd = z.shape
@@ -230,7 +267,7 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
             <h3 style="color: #2980b9; margin-top: 30px;">6. Matriz de Dados Medidos (Alturas em metros)</h3>
             <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; margin-bottom: 20px;">
                 <tr style="background-color: #ecf0f1;">
-                    <th style="padding: 8px; border: 1px solid #bdc3c7; color: #34495e;">Largura \ Comp.</th>
+                    <th style="padding: 8px; border: 1px solid #bdc3c7; color: #34495e;">Largura \\ Comp.</th>
             """
             for val_x in x:
                 tabela_matriz += f"<th style='padding: 8px; border: 1px solid #bdc3c7; color: #34495e;'>{val_x:g}m</th>"
