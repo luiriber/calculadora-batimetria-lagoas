@@ -4,13 +4,13 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import RectBivariateSpline
 import base64
 from io import BytesIO
-import json # NOVO: Importação para lidar com os arquivos salvos
+import json
 
 # Configuração da página do Streamlit
 st.set_page_config(page_title="Calculadora Batimétrica", layout="wide")
 
 # ==========================================
-# NOVO: SISTEMA DE IMPORTAR/CARREGAR DADOS
+# GERENCIAMENTO: IMPORTAR / CARREGAR DADOS
 # ==========================================
 st.sidebar.header("📂 Gerenciar Projeto")
 
@@ -35,7 +35,6 @@ def parse_distancias(texto):
     return np.array([float(i) for i in t.split()])
 
 def fig_to_base64(fig):
-    """Converte gráfico para imagem embutida no HTML"""
     buf = BytesIO()
     fig.savefig(buf, format='png', bbox_inches='tight', dpi=150)
     buf.seek(0)
@@ -84,20 +83,30 @@ with st.expander("📊 Dados Batimétricos (Medições)", expanded=True):
     distancias_x_input = st.text_input("Distâncias X (Comprimento) [m]:", value="10 20 30 40 50 60 70 80", key="dist_x")
     distancias_y_input = st.text_input("Distâncias Y (Largura) [m]:", value="10 20 30", key="dist_y")
 
-    matriz_padrao = "0.90\\t0.50\\t0.15\\t0.20\\t0.40\\t0.40\\t0.80\\t0.85\\n0.95\\t0.70\\t0.25\\t0.15\\t0.10\\t0.10\\t0.40\\t0.90\\n1.00\\t1.00\\t0.60\\t0.25\\t0.20\\t0.40\\t0.70\\t0.70"
-    matriz_input = st.text_area("Dados do Lodo (Matriz copiada do Excel):", value=matriz_padrao, height=150, key="matriz")
+    # usando \n reais e \t reais
+    matriz_padrao = (
+        "0.90\t0.50\t0.15\t0.20\t0.40\t0.40\t0.80\t0.85\n"
+        "0.95\t0.70\t0.25\t0.15\t0.10\t0.10\t0.40\t0.90\n"
+        "1.00\t1.00\t0.60\t0.25\t0.20\t0.40\t0.70\t0.70"
+    )
+    matriz_input = st.text_area(
+        "Dados do Lodo (Matriz copiada do Excel):",
+        value=matriz_padrao,
+        height=150,
+        key="matriz"
+    )
 
 # ==========================================
-# NOVO: SISTEMA DE EXPORTAR/SALVAR DADOS
+# EXPORTAR / SALVAR DADOS
 # ==========================================
 chaves_para_salvar = [
     "cliente", "data_lev", "resp_tec", "nome_ete", "municipio", "coord", "link_maps", "desc_ete",
     "nome_lagoa", "desc_lagoa", "objetivo", "metodologia", "conclusao",
     "prof_max", "comprimento", "largura", "sst", "dist_x", "dist_y", "matriz"
 ]
-# Captura o estado atual das variáveis com base nas keys
-dados_atuais = {k: st.session_state[k] for k in chaves_para_salvar if k in st.session_state}
-json_dados = json.dumps(dados_atuais, indent=4)
+
+dados_atuais = {k: st.session_state.get(k, "") for k in chaves_para_salvar}
+json_dados = json.dumps(dados_atuais, indent=4, ensure_ascii=False)
 
 st.sidebar.markdown("---")
 st.sidebar.download_button(
@@ -123,22 +132,49 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
             img_mapa_tag = ""
             if img_maps_upload is not None:
                 mapa_b64 = base64.b64encode(img_maps_upload.getvalue()).decode('utf-8')
-                img_mapa_tag = f'<div style="text-align: center; margin-top: 15px;"><img src="data:image/png;base64,{mapa_b64}" style="max-width: 100%; border: 1px solid #bdc3c7;"></div>'
+                img_mapa_tag = (
+                    f'<div style="text-align: center; margin-top: 15px;">'
+                    f'<img src="data:image/png;base64,{mapa_b64}" '
+                    f'style="max-width: 100%; border: 1px solid #bdc3c7;"></div>'
+                )
 
             link_tag = "-"
             if link_maps_input:
-                link_tag = f'<a href="{link_maps_input}" target="_blank" style="color: #2980b9; text-decoration: none;">📍 Ver no Google Maps</a>'
+                link_tag = (
+                    f'<a href="{link_maps_input}" target="_blank" '
+                    f'style="color: #2980b9; text-decoration: none;">'
+                    f'📍 Ver no Google Maps</a>'
+                )
 
             # --- PROCESSAMENTO MATEMÁTICO ---
             x = parse_distancias(distancias_x_input)
             y = parse_distancias(distancias_y_input)
 
-            linhas = matriz_input.strip().split('\\n')
-            z = np.array([[float(val.replace(',', '.')) for val in linha.split()] for linha in linhas])
+            # BLOCO CORRIGIDO PARA A MATRIZ
+            texto_matriz = matriz_input.replace('\r\n', '\n').replace('\r', '\n')
+            texto_matriz = texto_matriz.replace('\\n', '\n').replace('\\t', '\t')
+
+            linhas_str = [linha for linha in texto_matriz.split('\n') if linha.strip() != ""]
+
+            matriz_lista = []
+            for linha in linhas_str:
+                valores = linha.strip().replace(',', '.').split()
+                if len(valores) > 0:
+                    matriz_lista.append([float(v) for v in valores])
+
+            if len(matriz_lista) == 0:
+                st.error("A matriz de dados está vazia. Verifique o preenchimento.")
+                st.stop()
+
+            z = np.array(matriz_lista)
 
             linhas_qtd, colunas_qtd = z.shape
             if len(y) != linhas_qtd or len(x) != colunas_qtd:
-                st.error(f"Erro de Dimensão: A matriz tem {linhas_qtd} linhas e {colunas_qtd} colunas. As distâncias Y têm {len(y)} valores e X têm {len(x)} valores. Eles precisam ser iguais.")
+                st.error(
+                    f"Erro de Dimensão: A matriz tem {linhas_qtd} linhas e {colunas_qtd} colunas. "
+                    f"As distâncias Y têm {len(y)} valores e X têm {len(x)} valores. "
+                    "Eles precisam ser iguais."
+                )
                 st.stop()
 
             # Cálculos de Volume
@@ -148,8 +184,10 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
             volume_lodo_total_estimado = area_lagoa * espessura_media_lodo
             volume_livre_restante = volume_total_lagoa - volume_lodo_total_estimado
 
-            # Novo cálculo: Percentual de lodo em relação ao volume total da lagoa
-            percentual_lodo = (volume_lodo_total_estimado / volume_total_lagoa) * 100 if volume_total_lagoa > 0 else 0
+            percentual_lodo = (
+                (volume_lodo_total_estimado / volume_total_lagoa) * 100
+                if volume_total_lagoa > 0 else 0
+            )
 
             densidade_lodo = 1000
             massa_seca_kg = volume_lodo_total_estimado * densidade_lodo * (sst_input / 100)
@@ -169,7 +207,8 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
             # Gráfico 1
             fig1, ax1 = plt.subplots(figsize=(8, 4))
             contorno_cor = ax1.contourf(X_smooth, Y_smooth, Z_smooth, levels=15, cmap='viridis')
-            contorno_linhas = ax1.contour(X_smooth, Y_smooth, Z_smooth, levels=15, colors='black', linewidths=0.5, alpha=0.7)
+            contorno_linhas = ax1.contour(X_smooth, Y_smooth, Z_smooth, levels=15,
+                                          colors='black', linewidths=0.5, alpha=0.7)
             ax1.clabel(contorno_linhas, inline=True, fontsize=9, fmt='%1.2f m')
             fig1.colorbar(contorno_cor, label='Altura do Lodo (m)')
             ax1.set_title('Mapa Batimétrico (Planta) - Área Total da Lagoa', fontsize=12)
@@ -181,7 +220,8 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
             fig2, (ax2a, ax2b) = plt.subplots(2, 1, figsize=(8, 7))
             z_longitudinal = np.mean(Z_smooth, axis=0)
             ax2a.fill_between(x_smooth, 0, z_longitudinal, color='#8B4513', alpha=0.8, label='Camada de Lodo')
-            ax2a.fill_between(x_smooth, z_longitudinal, profundidade_max_input, color='#00CED1', alpha=0.3, label='Camada de Água (Livre)')
+            ax2a.fill_between(x_smooth, z_longitudinal, profundidade_max_input,
+                              color='#00CED1', alpha=0.3, label='Camada de Água (Livre)')
             ax2a.set_title('Perfil Longitudinal Médio (Corte no Comprimento)', fontsize=10)
             ax2a.set_xlabel('Comprimento (m)')
             ax2a.set_ylabel('Altura (m)')
@@ -191,7 +231,8 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
 
             z_transversal = np.mean(Z_smooth, axis=1)
             ax2b.fill_between(y_smooth, 0, z_transversal, color='#8B4513', alpha=0.8, label='Camada de Lodo')
-            ax2b.fill_between(y_smooth, z_transversal, profundidade_max_input, color='#00CED1', alpha=0.3, label='Camada de Água (Livre)')
+            ax2b.fill_between(y_smooth, z_transversal, profundidade_max_input,
+                              color='#00CED1', alpha=0.3, label='Camada de Água (Livre)')
             ax2b.set_title('Perfil Transversal Médio (Corte na Largura)', fontsize=10)
             ax2b.set_xlabel('Largura (m)')
             ax2b.set_ylabel('Altura (m)')
@@ -205,12 +246,25 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
             fig3 = plt.figure(figsize=(8, 6))
             ax3 = fig3.add_subplot(111, projection='3d')
             cor_massa = 'lightgray'
-            ax3.plot_surface(np.array([X_smooth[0,:], X_smooth[0,:]]), np.array([Y_smooth[0,:], Y_smooth[0,:]]), np.array([np.zeros_like(Z_smooth[0,:]), Z_smooth[0,:]]), color=cor_massa, alpha=1.0)
-            ax3.plot_surface(np.array([X_smooth[-1,:], X_smooth[-1,:]]), np.array([Y_smooth[-1,:], Y_smooth[-1,:]]), np.array([np.zeros_like(Z_smooth[-1,:]), Z_smooth[-1,:]]), color=cor_massa, alpha=1.0)
-            ax3.plot_surface(np.array([X_smooth[:,0], X_smooth[:,0]]), np.array([Y_smooth[:,0], Y_smooth[:,0]]), np.array([np.zeros_like(Z_smooth[:,0]), Z_smooth[:,0]]), color=cor_massa, alpha=1.0)
-            ax3.plot_surface(np.array([X_smooth[:,-1], X_smooth[:,-1]]), np.array([Y_smooth[:,-1], Y_smooth[:,-1]]), np.array([np.zeros_like(Z_smooth[:,-1]), Z_smooth[:,-1]]), color=cor_massa, alpha=1.0)
+            ax3.plot_surface(np.array([X_smooth[0, :], X_smooth[0, :]]),
+                             np.array([Y_smooth[0, :], Y_smooth[0, :]]),
+                             np.array([np.zeros_like(Z_smooth[0, :]), Z_smooth[0, :]]),
+                             color=cor_massa, alpha=1.0)
+            ax3.plot_surface(np.array([X_smooth[-1, :], X_smooth[-1, :]]),
+                             np.array([Y_smooth[-1, :], Y_smooth[-1, :]]),
+                             np.array([np.zeros_like(Z_smooth[-1, :]), Z_smooth[-1, :]]),
+                             color=cor_massa, alpha=1.0)
+            ax3.plot_surface(np.array([X_smooth[:, 0], X_smooth[:, 0]]),
+                             np.array([Y_smooth[:, 0], Y_smooth[:, 0]]),
+                             np.array([np.zeros_like(Z_smooth[:, 0]), Z_smooth[:, 0]]),
+                             color=cor_massa, alpha=1.0)
+            ax3.plot_surface(np.array([X_smooth[:, -1], X_smooth[:, -1]]),
+                             np.array([Y_smooth[:, -1], Y_smooth[:, -1]]),
+                             np.array([np.zeros_like(Z_smooth[:, -1]), Z_smooth[:, -1]]),
+                             color=cor_massa, alpha=1.0)
             ax3.plot_surface(X_smooth, Y_smooth, np.zeros_like(Z_smooth), color=cor_massa, alpha=1.0)
-            surf = ax3.plot_surface(X_smooth, Y_smooth, Z_smooth, cmap='viridis', edgecolor='none', alpha=1.0)
+            surf = ax3.plot_surface(X_smooth, Y_smooth, Z_smooth,
+                                    cmap='viridis', edgecolor='none', alpha=1.0)
             Z_max = np.full_like(X_smooth, profundidade_max_input)
             ax3.plot_surface(X_smooth, Y_smooth, Z_max, color='cyan', alpha=0.15)
             ax3.set_title('Mapa 3D: Perfil de Acúmulo de Lodo na Lagoa', fontsize=12, pad=10)
@@ -222,7 +276,7 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
             fig3.colorbar(surf, shrink=0.5, aspect=5, label='Altura do Lodo (m)', pad=0.1)
             img_grafico3 = fig_to_base64(fig3)
 
-            # --- CONSTRUÇÃO DAS TABELAS HTML ---
+            # --- TABELAS HTML ---
             tabela_volumes = f"""
             <h3 style="color: #2980b9; margin-top: 30px;">5. Resultados Volumétricos</h3>
             <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; margin-bottom: 20px;">
@@ -270,18 +324,27 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
                     <th style="padding: 8px; border: 1px solid #bdc3c7; color: #34495e;">Largura \\ Comp.</th>
             """
             for val_x in x:
-                tabela_matriz += f"<th style='padding: 8px; border: 1px solid #bdc3c7; color: #34495e;'>{val_x:g}m</th>"
+                tabela_matriz += (
+                    f"<th style='padding: 8px; border: 1px solid #bdc3c7; "
+                    f"color: #34495e;'>{val_x:g}m</th>"
+                )
             tabela_matriz += "</tr>"
 
             for i in range(linhas_qtd):
                 tabela_matriz += "<tr>"
-                tabela_matriz += f"<th style='background-color: #ecf0f1; padding: 8px; border: 1px solid #bdc3c7; color: #34495e;'>{y[i]:g}m</th>"
+                tabela_matriz += (
+                    f"<th style='background-color: #ecf0f1; padding: 8px; "
+                    f"border: 1px solid #bdc3c7; color: #34495e;'>{y[i]:g}m</th>"
+                )
                 for j in range(colunas_qtd):
-                    tabela_matriz += f"<td style='padding: 8px; border: 1px solid #bdc3c7;'>{format_br(z[i, j])}</td>"
+                    tabela_matriz += (
+                        f"<td style='padding: 8px; border: 1px solid #bdc3c7;'>"
+                        f"{format_br(z[i, j])}</td>"
+                    )
                 tabela_matriz += "</tr>"
             tabela_matriz += "</table></div>"
 
-            # --- CONSTRUÇÃO DO HTML FINAL ---
+            # --- HTML FINAL ---
             relatorio_html = f"""
             <div id="relatorio-container" style="font-family: Arial, sans-serif; max-width: 21cm; margin: 0 auto; background-color: white; padding: 20px; box-sizing: border-box;">
 
@@ -344,11 +407,9 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
             </div>
             """
 
-            # Exibe o relatório na tela do Streamlit
             st.markdown("---")
             st.subheader("📄 Visualização do Relatório")
 
-            # Adiciona um botão de download nativo do Streamlit para o HTML
             st.download_button(
                 label="💾 Baixar Relatório para Impressão (HTML)",
                 data=relatorio_html,
@@ -357,7 +418,6 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
                 help="Baixe este arquivo, abra no seu navegador (Chrome/Edge) e aperte Ctrl+P para salvar como PDF limpo."
             )
 
-            # Renderiza o HTML na tela
             st.components.v1.html(relatorio_html, height=1200, scrolling=True)
 
         except Exception as e:
