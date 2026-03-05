@@ -15,14 +15,30 @@ st.set_page_config(page_title="Calculadora Batimétrica", layout="wide")
 st.sidebar.header("📂 Gerenciar Projeto")
 
 arquivo_importado = st.sidebar.file_uploader("📥 Carregar Projeto Salvo (.json)", type=["json"])
+
 if arquivo_importado is not None:
     try:
-        dados_carregados = json.load(arquivo_importado)
-        for key, value in dados_carregados.items():
-            st.session_state[key] = value
-        st.sidebar.success("Dados carregados com sucesso!")
+        # Lê o conteúdo do arquivo
+        bytes_arquivo = arquivo_importado.getvalue()
+        
+        # CORREÇÃO: Verifica se ESTE arquivo já foi carregado para não sobrescrever as edições
+        if st.session_state.get("ultimo_arquivo_carregado") != bytes_arquivo:
+            dados_carregados = json.loads(bytes_arquivo)
+            
+            for key, value in dados_carregados.items():
+                st.session_state[key] = value
+                
+            # Salva na memória que este arquivo já foi processado
+            st.session_state["ultimo_arquivo_carregado"] = bytes_arquivo
+            st.sidebar.success("Dados carregados com sucesso!")
+            
     except Exception as e:
         st.sidebar.error(f"Erro ao ler o arquivo: {e}")
+else:
+    # Se o usuário clicar no 'X' para remover o arquivo do componente, 
+    # limpamos a memória do carregamento para ele poder subir de novo se quiser
+    if "ultimo_arquivo_carregado" in st.session_state:
+        del st.session_state["ultimo_arquivo_carregado"]
 
 # ==========================================
 # FUNÇÕES AUXILIARES
@@ -83,11 +99,11 @@ with st.expander("📊 Dados Batimétricos (Medições)", expanded=True):
     distancias_x_input = st.text_input("Distâncias X (Comprimento) [m]:", value="10 20 30 40 50 60 70 80", key="dist_x")
     distancias_y_input = st.text_input("Distâncias Y (Largura) [m]:", value="10 20 30", key="dist_y")
 
-    # usando \n reais e \t reais
+    # usando \\n reais e \\t reais
     matriz_padrao = (
-        "0.90\t0.50\t0.15\t0.20\t0.40\t0.40\t0.80\t0.85\n"
-        "0.95\t0.70\t0.25\t0.15\t0.10\t0.10\t0.40\t0.90\n"
-        "1.00\t1.00\t0.60\t0.25\t0.20\t0.40\t0.70\t0.70"
+        "0.90\\t0.50\\t0.15\\t0.20\\t0.40\\t0.40\\t0.80\\t0.85\\n"
+        "0.95\\t0.70\\t0.25\\t0.15\\t0.10\\t0.10\\t0.40\\t0.90\\n"
+        "1.00\\t1.00\\t0.60\\t0.25\\t0.20\\t0.40\\t0.70\\t0.70"
     )
     matriz_input = st.text_area(
         "Dados do Lodo (Matriz copiada do Excel):",
@@ -151,10 +167,10 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
             y = parse_distancias(distancias_y_input)
 
             # BLOCO CORRIGIDO PARA A MATRIZ
-            texto_matriz = matriz_input.replace('\r\n', '\n').replace('\r', '\n')
-            texto_matriz = texto_matriz.replace('\\n', '\n').replace('\\t', '\t')
+            texto_matriz = matriz_input.replace('\\r\\n', '\\n').replace('\\r', '\\n')
+            texto_matriz = texto_matriz.replace('\\\\n', '\\n').replace('\\\\t', '\\t')
 
-            linhas_str = [linha for linha in texto_matriz.split('\n') if linha.strip() != ""]
+            linhas_str = [linha for linha in texto_matriz.split('\\n') if linha.strip() != ""]
 
             matriz_lista = []
             for linha in linhas_str:
@@ -321,7 +337,7 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
             <h3 style="color: #2980b9; margin-top: 30px;">6. Matriz de Dados Medidos (Alturas em metros)</h3>
             <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; margin-bottom: 20px;">
                 <tr style="background-color: #ecf0f1;">
-                    <th style="padding: 8px; border: 1px solid #bdc3c7; color: #34495e;">Largura \\ Comp.</th>
+                    <th style="padding: 8px; border: 1px solid #bdc3c7; color: #34495e;">Largura \\\\ Comp.</th>
             """
             for val_x in x:
                 tabela_matriz += (
