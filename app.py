@@ -89,7 +89,6 @@ with st.expander("📝 Textos do Relatório", expanded=True):
     objetivo_input = st.text_area("Objetivo:", placeholder="Descreva o objetivo deste relatório...", key="objetivo")
     metodologia_input = st.text_area("Metodologia:", placeholder="Descreva a metodologia utilizada...", key="metodologia")
     conclusao_input = st.text_area("Conclusões e Recomendações:", placeholder="Descreva as conclusões...", key="conclusao")
-    # NOVO CAMPO SOLICITADO:
     equipe_input = st.text_area("Equipe de Trabalho:", placeholder="Ex: Eng. João Silva, Téc. Maria Souza...", key="equipe")
 
 with st.expander("📊 Dados Batimétricos (Medições)", expanded=True):
@@ -168,15 +167,10 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
             x = parse_distancias(distancias_x_input)
             y = parse_distancias(distancias_y_input)
 
-            # BLOCO CORRIGIDO DEFINITIVAMENTE PARA A MATRIZ
-            # Limpeza robusta usando Expressões Regulares para detectar qualquer variação de quebra
             texto_matriz = matriz_input
-            
-            # Converte as strings escapadas literais ("\n" ou "\\n") para quebras de linha reais
             texto_matriz = texto_matriz.replace('\\r\\n', '\n').replace('\\n', '\n').replace('\\r', '\n')
             texto_matriz = texto_matriz.replace('\\\\n', '\n').replace('\\\\t', '\t')
             
-            # Utiliza regex para quebrar o texto por qualquer separador vertical universal
             linhas_str = [linha for linha in re.split(r'[\n\r]+', texto_matriz) if linha.strip() != ""]
 
             matriz_lista = []
@@ -200,12 +194,15 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
                 )
                 st.stop()
 
-            # Cálculos de Volume
+            # Cálculos de Volume e Profundidades
             area_lagoa = comprimento_input * largura_input
             volume_total_lagoa = area_lagoa * profundidade_max_input
+            
             espessura_media_lodo = np.mean(z)
             volume_lodo_total_estimado = area_lagoa * espessura_media_lodo
+            
             volume_livre_restante = volume_total_lagoa - volume_lodo_total_estimado
+            prof_livre_agua = profundidade_max_input - espessura_media_lodo
 
             percentual_lodo = (
                 (volume_lodo_total_estimado / volume_total_lagoa) * 100
@@ -299,29 +296,34 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
             fig3.colorbar(surf, shrink=0.5, aspect=5, label='Altura do Lodo (m)', pad=0.1)
             img_grafico3 = fig_to_base64(fig3)
 
-            # --- TABELAS HTML ---
+            # --- TABELAS HTML (COM NOVA COLUNA E TEXTO JUSTIFICADO) ---
             tabela_volumes = f"""
             <h3 style="color: #2980b9; margin-top: 30px;">5. Resultados Volumétricos</h3>
             <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; margin-bottom: 20px;">
                 <tr style="background-color: #34495e; color: white;">
-                    <th style="padding: 12px; border: 1px solid #2c3e50;">Parâmetro</th>
-                    <th style="padding: 12px; border: 1px solid #2c3e50;">Valor Calculado</th>
+                    <th style="padding: 12px; border: 1px solid #2c3e50; text-align: center;">Parâmetro</th>
+                    <th style="padding: 12px; border: 1px solid #2c3e50; text-align: center;">Valor Calculado</th>
+                    <th style="padding: 12px; border: 1px solid #2c3e50; text-align: center;">Profundidade Estimada</th>
                 </tr>
                 <tr>
-                    <td style="padding: 12px; border: 1px solid #dee2e6;">Capacidade Total da Lagoa</td>
-                    <td style="padding: 12px; border: 1px solid #dee2e6;">{format_br(volume_total_lagoa)} m³</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6; text-align: justify;">Capacidade Total da Lagoa</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6; text-align: center;">{format_br(volume_total_lagoa)} m³</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6; text-align: center;">{format_br(profundidade_max_input)} m</td>
                 </tr>
                 <tr style="background-color: #f9f9f9;">
-                    <td style="padding: 12px; border: 1px solid #dee2e6;">Lodo Total Estimado</td>
-                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold; color: #d35400;">{format_br(volume_lodo_total_estimado)} m³</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6; text-align: justify;">Lodo Total Estimado</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold; color: #d35400; text-align: center;">{format_br(volume_lodo_total_estimado)} m³</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold; color: #d35400; text-align: center;">{format_br(espessura_media_lodo)} m</td>
                 </tr>
                 <tr>
-                    <td style="padding: 12px; border: 1px solid #dee2e6;">Percentual de Lodo (em relação ao volume total)</td>
-                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold; color: #d35400;">{format_br(percentual_lodo)} %</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6; text-align: justify;">Percentual de Lodo (em relação ao volume total)</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold; color: #d35400; text-align: center;">{format_br(percentual_lodo)} %</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6; text-align: center;">-</td>
                 </tr>
                 <tr>
-                    <td style="padding: 12px; border: 1px solid #dee2e6;">Volume Livre Restante (Água)</td>
-                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold; color: #2980b9;">{format_br(volume_livre_restante)} m³</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6; text-align: justify;">Volume Livre Restante (Água)</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold; color: #2980b9; text-align: center;">{format_br(volume_livre_restante)} m³</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: bold; color: #2980b9; text-align: center;">{format_br(prof_livre_agua)} m</td>
                 </tr>
             </table>
 
@@ -332,7 +334,7 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
                     <th style="padding: 10px; border: 1px solid #bdc3c7; color: #34495e;">Massa Seca Total</th>
                 </tr>
                 <tr>
-                    <td style="padding: 10px; border: 1px solid #bdc3c7; color: #7f8c8d;">Baseado no Lodo Total Estimado</td>
+                    <td style="padding: 10px; border: 1px solid #bdc3c7; color: #7f8c8d; text-align: justify;">Baseado no Lodo Total Estimado</td>
                     <td style="padding: 10px; border: 1px solid #bdc3c7; color: #d35400;">SST: {format_br(sst_input)}%</td>
                     <td style="padding: 10px; border: 1px solid #bdc3c7; font-weight: bold; color: #d35400;">{format_br(massa_seca_kg)} kg</td>
                 </tr>
@@ -370,7 +372,7 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
             # Formata a equipe de trabalho convertendo as quebras de linha para tags HTML <br>
             equipe_html = equipe_input.replace("\n", "<br>") if equipe_input else 'Não informada.'
 
-            # --- HTML FINAL ---
+            # --- HTML FINAL (COM TEXT-ALIGN: JUSTIFY NAS TABELAS E TEXTOS) ---
             relatorio_html = f"""
             <div id="relatorio-container" style="font-family: Arial, sans-serif; max-width: 21cm; margin: 0 auto; background-color: white; padding: 20px; box-sizing: border-box;">
 
@@ -389,18 +391,18 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
 
                 <h3 style="color: #2980b9; margin-top: 30px;">1. Identificação da ETE</h3>
                 <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 10px;">
-                    <tr><td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold; width: 25%;">Nome da ETE:</td><td style="padding: 8px; border: 1px solid #bdc3c7;">{nome_ete_input or '-'}</td></tr>
-                    <tr><td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold;">Município/UF:</td><td style="padding: 8px; border: 1px solid #bdc3c7;">{municipio_input or '-'}</td></tr>
-                    <tr><td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold;">Coordenadas:</td><td style="padding: 8px; border: 1px solid #bdc3c7;">{coord_input or '-'}</td></tr>
-                    <tr><td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold;">Localização:</td><td style="padding: 8px; border: 1px solid #bdc3c7;">{link_tag}</td></tr>
-                    <tr><td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold;">Descrição:</td><td style="padding: 8px; border: 1px solid #bdc3c7;">{desc_ete_input or '-'}</td></tr>
+                    <tr><td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold; width: 25%;">Nome da ETE:</td><td style="padding: 8px; border: 1px solid #bdc3c7; text-align: justify;">{nome_ete_input or '-'}</td></tr>
+                    <tr><td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold;">Município/UF:</td><td style="padding: 8px; border: 1px solid #bdc3c7; text-align: justify;">{municipio_input or '-'}</td></tr>
+                    <tr><td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold;">Coordenadas:</td><td style="padding: 8px; border: 1px solid #bdc3c7; text-align: justify;">{coord_input or '-'}</td></tr>
+                    <tr><td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold;">Localização:</td><td style="padding: 8px; border: 1px solid #bdc3c7; text-align: justify;">{link_tag}</td></tr>
+                    <tr><td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold;">Descrição:</td><td style="padding: 8px; border: 1px solid #bdc3c7; text-align: justify;">{desc_ete_input or '-'}</td></tr>
                 </table>
                 {img_mapa_tag}
 
                 <h3 style="color: #2980b9; margin-top: 30px;">2. Identificação da Lagoa</h3>
                 <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px;">
-                    <tr><td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold; width: 25%;">Nome da Lagoa:</td><td style="padding: 8px; border: 1px solid #bdc3c7;">{nome_lagoa_input or '-'}</td></tr>
-                    <tr><td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold;">Descrição:</td><td style="padding: 8px; border: 1px solid #bdc3c7;">{desc_lagoa_input or '-'}</td></tr>
+                    <tr><td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold; width: 25%;">Nome da Lagoa:</td><td style="padding: 8px; border: 1px solid #bdc3c7; text-align: justify;">{nome_lagoa_input or '-'}</td></tr>
+                    <tr><td style="padding: 8px; border: 1px solid #bdc3c7; background-color: #ecf0f1; font-weight: bold;">Descrição:</td><td style="padding: 8px; border: 1px solid #bdc3c7; text-align: justify;">{desc_lagoa_input or '-'}</td></tr>
                 </table>
 
                 <h3 style="color: #2980b9; margin-top: 30px;">3. Objetivo</h3>
