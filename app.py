@@ -5,6 +5,7 @@ from scipy.interpolate import RectBivariateSpline
 import base64
 from io import BytesIO
 import json
+import re
 
 # Configuração da página do Streamlit
 st.set_page_config(page_title="Calculadora Batimétrica", layout="wide")
@@ -21,7 +22,7 @@ if arquivo_importado is not None:
         # Lê o conteúdo do arquivo
         bytes_arquivo = arquivo_importado.getvalue()
         
-        # CORREÇÃO: Verifica se ESTE arquivo já foi carregado para não sobrescrever as edições
+        # Verifica se ESTE arquivo já foi carregado para não sobrescrever as edições
         if st.session_state.get("ultimo_arquivo_carregado") != bytes_arquivo:
             dados_carregados = json.loads(bytes_arquivo)
             
@@ -88,6 +89,8 @@ with st.expander("📝 Textos do Relatório", expanded=True):
     objetivo_input = st.text_area("Objetivo:", placeholder="Descreva o objetivo deste relatório...", key="objetivo")
     metodologia_input = st.text_area("Metodologia:", placeholder="Descreva a metodologia utilizada...", key="metodologia")
     conclusao_input = st.text_area("Conclusões e Recomendações:", placeholder="Descreva as conclusões...", key="conclusao")
+    # NOVO CAMPO SOLICITADO:
+    equipe_input = st.text_area("Equipe de Trabalho:", placeholder="Ex: Eng. João Silva, Téc. Maria Souza...", key="equipe")
 
 with st.expander("📊 Dados Batimétricos (Medições)", expanded=True):
     col1, col2, col3, col4 = st.columns(4)
@@ -99,11 +102,10 @@ with st.expander("📊 Dados Batimétricos (Medições)", expanded=True):
     distancias_x_input = st.text_input("Distâncias X (Comprimento) [m]:", value="10 20 30 40 50 60 70 80", key="dist_x")
     distancias_y_input = st.text_input("Distâncias Y (Largura) [m]:", value="10 20 30", key="dist_y")
 
-    # usando \\n reais e \\t reais
     matriz_padrao = (
-        "0.90\\t0.50\\t0.15\\t0.20\\t0.40\\t0.40\\t0.80\\t0.85\\n"
-        "0.95\\t0.70\\t0.25\\t0.15\\t0.10\\t0.10\\t0.40\\t0.90\\n"
-        "1.00\\t1.00\\t0.60\\t0.25\\t0.20\\t0.40\\t0.70\\t0.70"
+        "0.90\t0.50\t0.15\t0.20\t0.40\t0.40\t0.80\t0.85\n"
+        "0.95\t0.70\t0.25\t0.15\t0.10\t0.10\t0.40\t0.90\n"
+        "1.00\t1.00\t0.60\t0.25\t0.20\t0.40\t0.70\t0.70"
     )
     matriz_input = st.text_area(
         "Dados do Lodo (Matriz copiada do Excel):",
@@ -117,7 +119,7 @@ with st.expander("📊 Dados Batimétricos (Medições)", expanded=True):
 # ==========================================
 chaves_para_salvar = [
     "cliente", "data_lev", "resp_tec", "nome_ete", "municipio", "coord", "link_maps", "desc_ete",
-    "nome_lagoa", "desc_lagoa", "objetivo", "metodologia", "conclusao",
+    "nome_lagoa", "desc_lagoa", "objetivo", "metodologia", "conclusao", "equipe",
     "prof_max", "comprimento", "largura", "sst", "dist_x", "dist_y", "matriz"
 ]
 
@@ -166,11 +168,16 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
             x = parse_distancias(distancias_x_input)
             y = parse_distancias(distancias_y_input)
 
-            # BLOCO CORRIGIDO PARA A MATRIZ
-            texto_matriz = matriz_input.replace('\\r\\n', '\\n').replace('\\r', '\\n')
-            texto_matriz = texto_matriz.replace('\\\\n', '\\n').replace('\\\\t', '\\t')
-
-            linhas_str = [linha for linha in texto_matriz.split('\\n') if linha.strip() != ""]
+            # BLOCO CORRIGIDO DEFINITIVAMENTE PARA A MATRIZ
+            # Limpeza robusta usando Expressões Regulares para detectar qualquer variação de quebra
+            texto_matriz = matriz_input
+            
+            # Converte as strings escapadas literais ("\n" ou "\\n") para quebras de linha reais
+            texto_matriz = texto_matriz.replace('\\r\\n', '\n').replace('\\n', '\n').replace('\\r', '\n')
+            texto_matriz = texto_matriz.replace('\\\\n', '\n').replace('\\\\t', '\t')
+            
+            # Utiliza regex para quebrar o texto por qualquer separador vertical universal
+            linhas_str = [linha for linha in re.split(r'[\n\r]+', texto_matriz) if linha.strip() != ""]
 
             matriz_lista = []
             for linha in linhas_str:
@@ -187,9 +194,9 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
             linhas_qtd, colunas_qtd = z.shape
             if len(y) != linhas_qtd or len(x) != colunas_qtd:
                 st.error(
-                    f"Erro de Dimensão: A matriz tem {linhas_qtd} linhas e {colunas_qtd} colunas. "
-                    f"As distâncias Y têm {len(y)} valores e X têm {len(x)} valores. "
-                    "Eles precisam ser iguais."
+                    f"Erro de Dimensão: A matriz processada tem {linhas_qtd} linhas e {colunas_qtd} colunas. "
+                    f"Mas as distâncias Y têm {len(y)} valores e X têm {len(x)} valores. "
+                    "Eles precisam ser iguais. Verifique a caixa de texto da matriz."
                 )
                 st.stop()
 
@@ -360,6 +367,9 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
                 tabela_matriz += "</tr>"
             tabela_matriz += "</table></div>"
 
+            # Formata a equipe de trabalho convertendo as quebras de linha para tags HTML <br>
+            equipe_html = equipe_input.replace("\n", "<br>") if equipe_input else 'Não informada.'
+
             # --- HTML FINAL ---
             relatorio_html = f"""
             <div id="relatorio-container" style="font-family: Arial, sans-serif; max-width: 21cm; margin: 0 auto; background-color: white; padding: 20px; box-sizing: border-box;">
@@ -408,7 +418,12 @@ if st.button("🚀 Gerar Relatório Completo", type="primary", use_container_wid
                 </div>
 
                 <div class="avoid-break">
-                    <h3 style="color: #2980b9; margin-top: 40px;">8. Anexos Gráficos</h3>
+                    <h3 style="color: #2980b9; margin-top: 30px;">8. Equipe de Trabalho</h3>
+                    <p style="text-align: justify; font-size: 14px; color: #444; line-height: 1.6;">{equipe_html}</p>
+                </div>
+
+                <div class="avoid-break">
+                    <h3 style="color: #2980b9; margin-top: 40px;">9. Anexos Gráficos</h3>
                     {img_grafico1}
                 </div>
                 <div class="avoid-break">{img_grafico2}</div>
